@@ -233,6 +233,7 @@ var SIN65 = Math.sin((65/360)*2*Math.PI);
 var COS65 = Math.cos((65/360)*2*Math.PI);
 var SIN35 = Math.sin((25/360)*2*Math.PI);
 var COS35 = Math.cos((25/360)*2*Math.PI);
+
 function sketchProc(p) {
     var state = getInitialSearchState();
 
@@ -244,7 +245,7 @@ function sketchProc(p) {
     var ANT_IMAGE_WIDTH = 20;
     var ANT_IMAGE_HEIGHT = 20;
 
-    var id;
+    var intervalId = null;
     var intermediateX = state.posX;
     var intermediateY = state.posY;
     var INTERVAL = 10;
@@ -335,15 +336,17 @@ function sketchProc(p) {
             draw(state.posX, state.posY);
             intermediateX = state.posX;
             intermediateY = state.posY;
-            if (! updateSearchState(state))
-                clearInterval(id);
+            if (! updateSearchState(state)) {
+                clearInterval(intervalId);
+                intervalId = "STOPPED";
+            }
             ticks = 0;
         }
         else {
             var frac = INTERVAL / state.parms.stepTime;
             var xd = state.posX - intermediateX;
             var yd = state.posY - intermediateY;
-            assert(xd != 0 && yd != 0, "Unexpected zero value (1) " +xd + " " + yd + " " + state.posX + " " + intermediateX + " " + state.posY + " " + intermediateY);
+            assert(xd != 0 && yd != 0, "Unexpected zero value (1)");
             var l = Math.sqrt(xd*xd + yd*yd);
             assert(l > 0, "Unexpected zero value (2)");
             var sin = yd/l;
@@ -355,13 +358,28 @@ function sketchProc(p) {
             ticks++;
         }
     }
-    id = setInterval(update, INTERVAL);
+    intervalId = setInterval(update, INTERVAL);
+
+    $("#pause").click(function (e) {
+        e.preventDefault();
+        if (intervalId != "STOPPED") {
+            if (intervalId == "PAUSED") {
+                intervalId = setInterval(update, INTERVAL);
+                $("#pause").attr('value', 'Pause');
+            }
+            else {
+                clearInterval(intervalId);
+                intervalId = "PAUSED";
+                $("#pause").attr('value', 'Go');
+            }
+        }
+    });
 }
 
-window.onload = function () {
+$(document).ready(function () {
     var canvas = document.getElementById("canvas1");
 //    text1 = document.getElementById("text1");
 //    text2 = document.getElementById("text2");
 
     var processingInstance = new Processing(canvas, sketchProc);
-};
+});
