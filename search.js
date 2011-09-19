@@ -129,8 +129,7 @@ function pInRadius(state, radius) {
 // Given the ant's current distance from the origin,
 // this function decides whether the next step in the search
 // should move toward or away from the origin. It returns 1
-// to indicate 'away', -1 to indicate 'toward', and 0 to
-// indicate that the ant should stay in the current radius.
+// to indicate 'away' and -1 to indicate 'toward'.
 function inOrOut(state, currentRadius) {
     if (currentRadius == 0)
         return 1; // Out
