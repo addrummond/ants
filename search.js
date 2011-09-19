@@ -229,10 +229,10 @@ function updateSearchState(state) {
 }
 
 var SINCOS45 = 0.707106781467586;
-var SIN65 = Math.sin((67.5/360)*2*Math.PI);
-var COS65 = Math.cos((67.5/360)*2*Math.PI);
-var SIN35 = Math.sin((37.5/360)*2*Math.PI);
-var COS35 = Math.cos((37.5/360)*2*Math.PI);
+var SIN65 = Math.sin((65/360)*2*Math.PI);
+var COS65 = Math.cos((65/360)*2*Math.PI);
+var SIN35 = Math.sin((25/360)*2*Math.PI);
+var COS35 = Math.cos((25/360)*2*Math.PI);
 function sketchProc(p) {
     var state = getInitialSearchState();
 
