@@ -365,12 +365,12 @@ function sketchProc(p) {
         if (intervalId != "STOPPED") {
             if (intervalId == "PAUSED") {
                 intervalId = setInterval(update, INTERVAL);
-                $("#pause").attr('value', 'Pause');
+                $("#pause").val('Pause');
             }
             else {
                 clearInterval(intervalId);
                 intervalId = "PAUSED";
-                $("#pause").attr('value', 'Go');
+                $("#pause").val('Go');
             }
         }
     });
