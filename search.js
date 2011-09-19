@@ -199,12 +199,12 @@ function updateSearchState(state) {
     // and move it back inside if it has.
     var dsqd = state.posX*state.posX + state.posY*state.posY;
     var radsqd = state.parms.numRadii * state.parms.radiusSize * state.parms.numRadii * state.parms.radiusSize;
-    if (dsqd > radsqd/2) {
+    if (dsqd > radsqd) {
         var d = Math.sqrt(dsqd);
         var sin = state.posY / d;
         var cos = state.posX / d;
-        state.posX = rad * cos;
-        state.posY = rad * sin;
+        state.posX = state.parms.numRadii * state.parms.radiusSize * cos;
+        state.posY = state.parms.numRadii * state.parms.radiusSize * sin;
     }
 
     if (state.posX < state.radiiMinXs[currentRadius])
