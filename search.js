@@ -235,8 +235,6 @@ function sketchProc(p) {
 
     p.size(WIDTH, HEIGHT);
 
-    var MAXP = 1.0; //maxPInRadius(state);
-
     var antImage = p.loadImage("ant.png");
     var ANT_IMAGE_WIDTH = 20;
     var ANT_IMAGE_HEIGHT = 20;
@@ -254,7 +252,7 @@ function sketchProc(p) {
         for (var i = state.parms.numRadii-1; i >= 0; --i) {
             var prob = pInRadius(state, i);
             psInRadii[i] = prob;
-            var v = (prob*255)/MAXP;
+            var v = (prob*255);
             p.stroke(255, 255, 255);
             p.fill(v,v,v);
             p.ellipse(WIDTH/2, HEIGHT/2, (i+1) * state.parms.radiusSize * 2, (i+1) * state.parms.radiusSize * 2);
