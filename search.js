@@ -252,7 +252,7 @@ function sketchProc(p) {
         for (var i = state.parms.numRadii-1; i >= 0; --i) {
             var prob = pInRadius(state, i);
             psInRadii[i] = prob;
-            var v = (prob*255);
+            var v = expCumulative(5, prob)*255;
             p.stroke(255, 255, 255);
             p.fill(v,v,v);
             p.ellipse(WIDTH/2, HEIGHT/2, (i+1) * state.parms.radiusSize * 2, (i+1) * state.parms.radiusSize * 2);
