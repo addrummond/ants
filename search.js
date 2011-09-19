@@ -72,7 +72,8 @@ function getSearchParms() {
         whiteNoiseParms: getWhiteNoiseParms(),
         pDiscover: 0.9,
         radiusSize: radiusSize,
-        stepSize: radiusSize/4,
+        stepSize: radiusSize/2,
+        stepTime: 100, // Milliseconds
         numRadii: numRadii,
         scalingParm: 10//numRadii * radiusSize * 5
     }
@@ -241,7 +242,13 @@ function sketchProc(p) {
     var ANT_IMAGE_HEIGHT = 20;
 
     var id;
-    function update() {
+    var intermediateX = state.posX;
+    var intermediateY = state.posY;
+    var INTERVAL = 10;
+    assert(INTERVAL <= state.parms.stepTime, "Bad INTERVAL");
+    var ticks = 0;
+    p.image(antImage, 100, 100, ANT_IMAGE_WIDTH, ANT_IMAGE_HEIGHT);
+    function draw(antX, antY) {
         // Draw probability circles.
         var psInRadii = new Array(state.parms.numRadii);
         for (var i = state.parms.numRadii-1; i >= 0; --i) {
@@ -266,13 +273,40 @@ function sketchProc(p) {
         }
         p.text(psInRadii[0].toFixed(PRECISION), WIDTH/2 - 10, HEIGHT/2);
 
-        p.image(antImage, state.posX + WIDTH/2 - ANT_IMAGE_WIDTH/2, HEIGHT-(state.posY+HEIGHT/2)+ANT_IMAGE_HEIGHT/2, ANT_IMAGE_WIDTH, ANT_IMAGE_HEIGHT);
-        if (! updateSearchState(state)) {
-            clearInterval(id);
+        p.image(antImage, antX + WIDTH/2 - ANT_IMAGE_WIDTH/2, HEIGHT-(antY+HEIGHT/2)+ANT_IMAGE_HEIGHT/2, ANT_IMAGE_WIDTH, ANT_IMAGE_HEIGHT);
+    }
+    draw(0, 0);
+
+    if (! updateSearchState(state))
+        return;
+    function update() {
+        if (ticks >= state.parms.stepTime / INTERVAL) {
+            assert(Math.abs(intermediateX - state.posX) < EPSILON && Math.abs(intermediateY - state.posY) < EPSILON,
+                   "Unexpected ant position " + state.posX + ", " + state.posY + " (" + intermediateX + ", " + intermediateY + ")");
+            draw(state.posX, state.posY);
+            intermediateX = state.posX;
+            intermediateY = state.posY;
+            if (! updateSearchState(state))
+                clearInterval(id);
+            ticks = 0;
+        }
+        else {
+            var frac = INTERVAL / state.parms.stepTime;
+            var xd = state.posX - intermediateX;
+            var yd = state.posY - intermediateY;
+            assert(xd != 0 && yd != 0, "Unexpected zero value (1) " +xd + " " + yd + " " + state.posX + " " + intermediateX + " " + state.posY + " " + intermediateY);
+            var l = Math.sqrt(xd*xd + yd*yd);
+            assert(l > 0, "Unexpected zero value (2)");
+            var sin = yd/l;
+            var cos = xd/l;
+            var distanceMoving = frac * state.parms.stepSize;
+            intermediateX += cos * distanceMoving;
+            intermediateY += sin * distanceMoving;
+            draw(intermediateX, intermediateY);
+            ticks++;
         }
     }
-    update();
-    id = setInterval(update, 100);
+    id = setInterval(update, INTERVAL);
 }
 
 window.onload = function () {
