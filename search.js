@@ -270,33 +270,42 @@ function sketchProc(p) {
             // Arrow to indicate whether this is more or less probable than inner circle.
             var prob = psInRadii[i];
             var innerProb = psInRadii[i-1];
-            var arrowPosX = (i * state.parms.radiusSize * SINCOS45) + WIDTH/2;
-            var arrowPosY = (i * state.parms.radiusSize * SINCOS45) + HEIGHT/2;
             p.stroke(0,255,0);
             p.fill(0,255,0);
-            if (innerProb > prob) {
-                // Arrow pointing outward.
-                var pointPosX = arrowPosX - 5;
-                var pointPosY = arrowPosY - 5;
-                var p1X = pointPosX + COS65*10;
-                var p1Y = pointPosY + SIN65*10;
-                var p2X = pointPosX + COS35*10;
-                var p2Y = pointPosY + SIN35*10;
-                p.triangle(pointPosX, pointPosY, p1X, p1Y, p2X, p2Y);
-            }
-            else if (innerProb < prob) {
-                // Arrow pointing inward.
-                var pointPosX = arrowPosX + 5;
-                var pointPosY = arrowPosY + 5;
-                var p1X = pointPosX - COS65*10;
-                var p1Y = pointPosY - SIN65*10;
-                var p2X = pointPosX - COS35*10;
-                var p2Y = pointPosY - SIN35*10;
-                p.triangle(pointPosX, pointPosY, p1X, p1Y, p2X, p2Y);
-            }
-            else {
-                // Circle to indicate that they're equal.
-                p.ellipse(arrowPosX, arrowPosY, 10, 10);
+            var ms = [ [1, 1, 1, 1,     -1, -1, 1, 1, 1, 1,   1, 1, -1, -1, -1, -1 ],
+                       [1, 1, -1, 1,    -1, 1, 1, -1, 1, -1,  1, -1, -1, 1, -1, 1  ],
+                       [-1, 1, -1, 1,   1, 1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1   ],
+                       [-1, 1, 1, 1,   1, -1, -1, 1, -1, 1,  -1, 1, 1, -1, 1, -1   ] ];
+            for (var j = 0; j < ms.length; ++j) {
+                var m = ms[j];
+
+                var arrowPosX = (i * state.parms.radiusSize * SINCOS45 * m[0]) + (WIDTH/2)*m[1];
+                var arrowPosY = (i * state.parms.radiusSize * SINCOS45 * m[2]) + (HEIGHT/2)*m[3];
+
+                if (innerProb < prob) {
+                    // Arrow pointing inward.
+                    var pointPosX = arrowPosX + 5*m[4];
+                    var pointPosY = arrowPosY + 5*m[5];
+                    var p1X = pointPosX + COS65*10*m[6];
+                    var p1Y = pointPosY + SIN65*10*m[7];
+                    var p2X = pointPosX + COS35*10*m[8];
+                    var p2Y = pointPosY + SIN35*10*m[9];
+                    p.triangle(pointPosX, pointPosY, p1X, p1Y, p2X, p2Y);
+                }
+                else if (innerProb > prob) {
+                    // Arrow pointing outward.
+                    var pointPosX = arrowPosX + 5*m[10];
+                    var pointPosY = arrowPosY + 5*m[11];
+                    var p1X = pointPosX + COS65*10*m[12];
+                    var p1Y = pointPosY + SIN65*10*m[13];
+                    var p2X = pointPosX + COS35*10*m[14];
+                    var p2Y = pointPosY + SIN35*10*m[15];
+                    p.triangle(pointPosX, pointPosY, p1X, p1Y, p2X, p2Y);
+                }
+                else {
+                    // Circle to indicate that they're equal.
+                    p.ellipse(arrowPosX, arrowPosY, 10, 10);
+                }
             }
         }
 
