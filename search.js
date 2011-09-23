@@ -130,20 +130,32 @@ function pInRadius(state, radius) {
 // Given the ant's current distance from the origin,
 // this function decides whether the next step in the search
 // should move toward or away from the origin. It returns 1
-// to indicate 'away' and -1 to indicate 'toward'.
+// to indicate 'away', 0 to indicate 'stay at current distance',
+// and -1 to indicate 'toward'.
 function inOrOut(state, currentRadius) {
-    if (currentRadius == 0)
-        return 1; // Out
-    if (currentRadius == state.parms.numRadii-1)
-        return -1; // In
-
-//    var inCurrentR = pInRadius(state, currentRadius);
-    var inOuterR = pInRadius(state, currentRadius+1);
-    var inInnerR = pInRadius(state, currentRadius-1);
-    if (inOuterR > inInnerR)
-        return 1;
-    else
-        return -1
+    if (currentRadius == 0) {
+        if (pInRadius(state, 0) > pInRadius(state, 1))
+            return 0;
+        else
+            return 1;
+    }
+    else if (currentRadius == state.parms.numRadii - 1) {
+        if (pInRadius(state, currentRadius) < pInRadius(state, currentRadius-1))
+            return -1;
+        else
+            return 0;
+    }
+    else {
+        var inCurrentR = pInRadius(state, currentRadius);
+        var inOuterR = pInRadius(state, currentRadius+1);
+        var inInnerR = pInRadius(state, currentRadius-1);
+        if (inCurrentR > inInnerR && inCurrentR > inOuterR)
+            return 0;
+        else if (inCurrentR < inOuterR && inOuterR > inInnerR)
+            return 1;
+        else
+            return -1;
+    }
 }
 
 function assertConsistentRadiusPs(state) {
@@ -178,23 +190,31 @@ function updateSearchState(state) {
     state.oldPosX = state.posX;
     state.oldPosY = state.posY;
 
-    if (state.inOrOut == -1) {
-        vecFromRadX *= -1;
-        vecFromRadY *= -1;
+    if (inOrOut != 0) {
+        if (state.inOrOut == -1) {
+            vecFromRadX *= -1;
+            vecFromRadY *= -1;
+        }
+        
+        var sin = vecFromRadY / l;
+        var cos = vecFromRadX / l;
+        state.posX += rad * state.parms.stepSize * cos;
+        state.posY += rad * state.parms.stepSize * sin;
+        
+        var perpX = -vecFromRadY;
+        var perpY = vecFromRadX;
+        
+        var sin = perpY / l;
+        var cos = perpX / l;
+        state.posX += tan * cos * state.parms.stepSize;
+        state.posY += tan * sin * state.parms.stepSize;
     }
-
-    var sin = vecFromRadY / l;
-    var cos = vecFromRadX / l;
-    state.posX += rad * state.parms.stepSize * cos;
-    state.posY += rad * state.parms.stepSize * sin;
-
-    var perpX = -vecFromRadY;
-    var perpY = vecFromRadX;
-
-    var sin = perpY / l;
-    var cos = perpX / l;
-    state.posX += tan * cos * state.parms.stepSize;
-    state.posY += tan * sin * state.parms.stepSize;
+    else {
+        var sin = -vecFromRadY / l;
+        var cos = vecFromRadX / l;
+        state.posX += cos * state.parms.stepSize;
+        state.posY += sin * state.parms.stepSize;
+    }
 
     // Check that the ant hasn't gone outside the area,
     // and move it back inside if it has.
@@ -206,6 +226,12 @@ function updateSearchState(state) {
         var cos = state.posX / d;
         state.posX = state.parms.numRadii * state.parms.radiusSize * cos;
         state.posY = state.parms.numRadii * state.parms.radiusSize * sin;
+    }
+
+    // If we've "crossed over", flip inOrOut.
+    if ((state.oldPosX <= 0 && state.posX > 0 || state.oldPosX > 0 && state.posX <= 0) &&
+        (state.oldPosY <= 0 && state.posY > 0 || state.oldPosY > 0 && state.posY <= 0)) {
+        state.inOrOut *= -1;
     }
 
     if (state.posX < state.radiiMinXs[currentRadius])
@@ -241,18 +267,18 @@ function sketchProc(p) {
 
     p.size(WIDTH, HEIGHT);
 
-    var antImage = p.loadImage("ant.png");
-    var ANT_IMAGE_WIDTH = 20;
-    var ANT_IMAGE_HEIGHT = 20;
-
     var intervalId = null;
     var intermediateX = state.posX;
     var intermediateY = state.posY;
     var INTERVAL = 10;
     assert(INTERVAL <= state.parms.stepTime, "Bad INTERVAL");
     var ticks = 0;
-    p.image(antImage, 100, 100, ANT_IMAGE_WIDTH, ANT_IMAGE_HEIGHT);
     function draw(antX, antY) {
+        // Draw black square as background.
+        p.fill(0, 0, 0);
+        p.stroke(0, 0, 0);
+        p.rect(0, 0, WIDTH, HEIGHT);
+
         // Draw probability circles.
         var psInRadii = new Array(state.parms.numRadii);
         for (var i = 0; i < state.parms.numRadii; ++i) {
@@ -323,7 +349,24 @@ function sketchProc(p) {
         }
         p.text(psInRadii[0].toFixed(PRECISION), WIDTH/2 - 10, HEIGHT/2);
 
-        p.image(antImage, antX + WIDTH/2 - ANT_IMAGE_WIDTH/2, HEIGHT-(antY+HEIGHT/2)+ANT_IMAGE_HEIGHT/2, ANT_IMAGE_WIDTH, ANT_IMAGE_HEIGHT);
+        p.stroke(255, 0, 0);
+        p.fill(255, 0, 0);
+        p.ellipse(antX + WIDTH/2, HEIGHT/2-antY, 20, 20);
+        p.stroke(0, 0, 255);
+        p.fill(0, 0, 255);
+        if (state.inOrOut == -1) {
+            p.line(WIDTH/2, HEIGHT/2, antX+WIDTH/2, HEIGHT/2-antY);
+        }
+        else if (state.inOrOut == 0) {
+            p.ellipse(antX+WIDTH/2, HEIGHT/2-antY, 10, 10);
+        }
+        else {
+            var l = Math.sqrt(antX*antX + antY*antY);
+            var sin  = antY/l;
+            var cos = antX/l;
+            var xl = state.parms.numRadii * state.parms.radiusSize - l;
+            p.line(antX+WIDTH/2, HEIGHT/2-antY, antX + cos*xl + WIDTH/2, antY + sin*xl + HEIGHT/2);
+        }
     }
     draw(0, 0);
 
