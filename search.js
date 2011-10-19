@@ -48,10 +48,13 @@ function getWhiteNoiseParms() {
     var parms = { };
     parms.f = 1;
     parms.m = 20;
-    parms.phi = new Array(parms.m);
+    // Fig 17b:
+    parms.phi = [0.19, 0.91, 0.37, 0.82, 0.42, 0.31, 0.54, 0.53, 0.27, 0.73, 0.27, 0.10, 0.59, 0.75, 0.65, 0.50, 0.78, 0.61, 0.46, 0.55];
+/*    parms.phi = new Array(parms.m);
     for (var i = 0; i < parms.m; ++i) {
         parms.phi[i] = Math.random(); // Between 0 and 1.
-    }
+        assert(parms.phi[i] >= 0 && parms.phi[i] <= 1, "Bad random number");
+    }*/
     return parms;
 }
 
@@ -67,15 +70,15 @@ function whiteNoise(parms, p) {
 function getSearchParms() {
     var numRadii = 10, radiusSize = 40;
     return {
-        maxSimulationSteps: 1000,
+        maxSimulationSteps: 500,
         gaussParms: { mean: 0, sigma: Math.sqrt(numRadii) },
         whiteNoiseParms: getWhiteNoiseParms(),
-        pDiscover: 0.9,
+        pDiscover: 0.8,
         radiusSize: radiusSize,
-        stepSize: radiusSize/2,
+        stepSize: radiusSize,
         stepTime: 100, // Milliseconds
         numRadii: numRadii,
-        scalingParm: 10//numRadii * radiusSize * 5
+        scalingParm: 20//numRadii * radiusSize * 5
     }
 }
 
@@ -89,11 +92,12 @@ function getInitialSearchState() {
         radiiMaxXs: zeroedArray(parms.numRadii),
         radiiMinYs: zeroedArray(parms.numRadii),
         radiiMaxYs: zeroedArray(parms.numRadii),
-        inOrOut: 1, // 1 for out, -1 for in.
+        inOrOut: 1, // 1 for out, 0 for stay in the same radius, -1 for in.
         posX: 0, // From origin (not the same as processing coord).
         posY: 0, // From origin (not the same as processing coord).
         oldPosX: 0,
-        oldPosY: 0
+        oldPosY: 0,
+        previousRadius: null
     };
 }
 
@@ -151,8 +155,10 @@ function inOrOut(state, currentRadius) {
         var inInnerR = pInRadius(state, currentRadius-1);
         if (inCurrentR > inInnerR && inCurrentR > inOuterR)
             return 0;
-        else if (inCurrentR < inOuterR && inOuterR > inInnerR)
+        else if (inOuterR > inCurrentR && inOuterR > inInnerR)
             return 1;
+        else if (inOuterR == inCurrentR || inOuterR == inInnerR)
+            return 1; // Go out by default.
         else
             return -1;
     }
@@ -181,7 +187,7 @@ function updateSearchState(state) {
     var vecFromRadX = state.posX == 0 ? 1 : state.posX;
     var vecFromRadY = state.posY;
     var l = Math.sqrt((vecFromRadX*vecFromRadX) + (vecFromRadY*vecFromRadY));
-    var currentRadius = state.posX == 0 && state.posY == 0 ? 0 : Math.floor(l / state.parms.radiusSize);
+    var currentRadius = Math.floor(l / state.parms.radiusSize);
     if (currentRadius >= state.parms.numRadii)
         return false;
 
@@ -190,7 +196,7 @@ function updateSearchState(state) {
     state.oldPosX = state.posX;
     state.oldPosY = state.posY;
 
-    if (inOrOut != 0) {
+    if (state.inOrOut != 0) {
         if (state.inOrOut == -1) {
             vecFromRadX *= -1;
             vecFromRadY *= -1;
@@ -209,11 +215,19 @@ function updateSearchState(state) {
         state.posX += tan * cos * state.parms.stepSize;
         state.posY += tan * sin * state.parms.stepSize;
     }
-    else {
-        var sin = -vecFromRadY / l;
-        var cos = vecFromRadX / l;
+    else { // state.inOrOut == 0
+        // Move the step size while keeping at exactly the same distance from the origin.
+        var theta = Math.atan((state.parms.stepSize * 0.5) / l) * 2;
+        var angle = Math.PI/2 - Math.asin((l * Math.sin(theta)) / state.parms.stepSize);
+        console.log(theta + " : " + angle);
+        var cos = Math.cos(angle);
+        var sin = Math.sin(angle);
         state.posX += cos * state.parms.stepSize;
         state.posY += sin * state.parms.stepSize;
+
+        // Sanity check.
+        var newRadius = Math.floor(l / state.parms.radiusSize);
+        assert(newRadius == currentRadius, "Ant skipped out of its radius");
     }
 
     // Check that the ant hasn't gone outside the area,
@@ -228,11 +242,18 @@ function updateSearchState(state) {
         state.posY = state.parms.numRadii * state.parms.radiusSize * sin;
     }
 
-    // If we've "crossed over", flip inOrOut.
-    if ((state.oldPosX <= 0 && state.posX > 0 || state.oldPosX > 0 && state.posX <= 0) &&
-        (state.oldPosY <= 0 && state.posY > 0 || state.oldPosY > 0 && state.posY <= 0)) {
-        state.inOrOut *= -1;
-    }
+//    // If we've "crossed over", flip inOrOut.
+//    if ((state.oldPosX <= 0 && state.posX > 0 || state.oldPosX > 0 && state.posX <= 0) &&
+//        (state.oldPosY <= 0 && state.posY > 0 || state.oldPosY > 0 && state.posY <= 0)) {
+//        alert("CROSS!");
+//        state.inOrOut *= -1;
+//    }
+
+//    if (state.previousRadius !== null && currentRadius == 0 && state.previousRadius > 0) {
+//        alert("CROSS!");
+//        state.inOrOut *= -1;
+//    }
+//    state.previousRadius = currentRadius;
 
     if (state.posX < state.radiiMinXs[currentRadius])
         state.radiiMinXs[currentRadius] = state.posX;
@@ -244,7 +265,15 @@ function updateSearchState(state) {
     else if (state.posY > state.radiiMaxYs[currentRadius])
         state.radiiMaxYs[currentRadius] = state.posY;
 
-    state.timeInRadii[currentRadius]++;
+    if (state.previousRadius === null) {
+        state.timeInRadii[currentRadius]++;
+    }
+    else {
+        for (var i = state.previousRadius; i <= currentRadius; ++i) {
+            state.timeInRadii[i] += 1/(Math.abs(currentRadius-state.previousRadius)+1);
+        }
+    }
+    state.previousRadius = currentRadius;
 
     if (((state.oldPosX < 0 && state.posX > 0) || (state.posX < 0 && state.oldPosX > 0) || (state.posX == 0 && state.oldPosX == 0)) &&
         ((state.oldPosY < 0 && state.posY > 0) || (state.posY < 0 && state.oldPosY > 0) || (state.posY == 0 && state.oldPosY == 0))) {
@@ -262,6 +291,9 @@ var COS35 = Math.cos((25/360)*2*Math.PI);
 
 function sketchProc(p) {
     var state = getInitialSearchState();
+    var positions = new Array(state.parms.maxSimulationSteps * 2);
+    positions[0] = 0;
+    positions[1] = 0;
 
     var WIDTH = 820, HEIGHT = 820;
 
@@ -273,7 +305,7 @@ function sketchProc(p) {
     var INTERVAL = 10;
     assert(INTERVAL <= state.parms.stepTime, "Bad INTERVAL");
     var ticks = 0;
-    function draw(antX, antY) {
+    function draw(antX, antY, targetX, targetY) {
         // Draw black square as background.
         p.fill(0, 0, 0);
         p.stroke(0, 0, 0);
@@ -365,8 +397,15 @@ function sketchProc(p) {
             var sin  = antY/l;
             var cos = antX/l;
             var xl = state.parms.numRadii * state.parms.radiusSize - l;
-            p.line(antX+WIDTH/2, HEIGHT/2-antY, antX + cos*xl + WIDTH/2, antY + sin*xl + HEIGHT/2);
+            p.line(antX+WIDTH/2, HEIGHT/2-antY, -antX + cos*xl + WIDTH/2, HEIGHT/2 - antY + sin*xl);
         }
+
+        if (typeof(targetX) != "undefined") {
+            var dx = targetX - antX;
+            var dy = targetY - antY;
+            p.stroke(0, 255, 0);
+            p.line(WIDTH/2+antX, HEIGHT/2-antY, WIDTH/2+targetX, HEIGHT/2-targetY);
+        }       
     }
     draw(0, 0);
 
@@ -374,14 +413,50 @@ function sketchProc(p) {
         return;
     function update() {
         if (ticks >= state.parms.stepTime / INTERVAL) {
-            assert(Math.abs(intermediateX - state.posX) < EPSILON && Math.abs(intermediateY - state.posY) < EPSILON,
-                   "Unexpected ant position " + state.posX + ", " + state.posY + " (" + intermediateX + ", " + intermediateY + ")");
+//            assert(Math.abs(intermediateX - state.posX) < EPSILON && Math.abs(intermediateY - state.posY) < EPSILON,
+//                   "Unexpected ant position " + state.posX + ", " + state.posY + " (" + intermediateX + ", " + intermediateY + ")")
+            positions[state.step * 2] = state.posX;
+            positions[state.step * 2 + 1] = state.posY;
             draw(state.posX, state.posY);
             intermediateX = state.posX;
             intermediateY = state.posY;
             if (! updateSearchState(state)) {
                 clearInterval(intervalId);
                 intervalId = "STOPPED";
+                // Draw the entire path.
+                p.stroke(255, 0, 0);
+                p.noFill();
+                p.strokeWeight(4);
+                p.beginShape();
+                for (var i = 0; i < positions.length; i += 2) {
+                    var x = positions[i]; var y = positions[i+1];
+                    p.vertex(x+WIDTH/2, HEIGHT/2-y);
+                }
+                p.endShape();
+/*                // Draw the little blue arrows.
+                p.stroke(0, 0, 255);
+                p.fill(0, 0, 255);
+                p.noFill();
+                p.strokeWeight(1);
+                for (var i = 2; i < positions.length; i += 2) {
+                    var x1 = positions[i-2]; var y1 = positions[i-1];
+                    var x2 = positions[i]; var y2 = positions[i+1];
+                    var pointToBaseX = x1 - x2;
+                    var pointToBaseY = y1 - y2;
+                    var rat = pointToBaseY/pointToBaseX;
+                    var ax = Math.sqrt((4*4)/(rat*rat + 1));
+                    var ay = rat * ax;
+                    console.log(ax*ax + ay*ay);
+                    var perpX = -ax;
+                    var perpY = ay;
+                    var p2x = x2 + ax + perpX;
+                    var p2y = y2 + ay + perpY;
+                    var p3x = x2 + ax - perpX;
+                    var p3y = y2 + ay - perpY;
+                    p.triangle(x2+WIDTH/2, HEIGHT/2-y2, p2x+WIDTH/2, HEIGHT/2-p2y, WIDTH/2+p3x, HEIGHT/2-p3y);
+                    p.line(WIDTH/2+x2, HEIGHT/2-y2, WIDTH/2+x2 + ax, HEIGHT/2-(y2 + ay));
+                    console.log(JSON.stringify([x2,y2,p2x,p2y,p3x,p3y]));
+                }*/
             }
             ticks = 0;
         }
@@ -389,7 +464,7 @@ function sketchProc(p) {
             var frac = INTERVAL / state.parms.stepTime;
             var xd = state.posX - intermediateX;
             var yd = state.posY - intermediateY;
-            assert(xd != 0 && yd != 0, "Unexpected zero value (1)");
+            assert(!(xd == 0 && yd == 0), "Unexpected zero value (1)");
             var l = Math.sqrt(xd*xd + yd*yd);
             assert(l > 0, "Unexpected zero value (2)");
             var sin = yd/l;
@@ -397,9 +472,11 @@ function sketchProc(p) {
             var distanceMoving = frac * state.parms.stepSize;
             intermediateX += cos * distanceMoving;
             intermediateY += sin * distanceMoving;
-            draw(intermediateX, intermediateY);
+            draw(intermediateX, intermediateY, state.posX, state.posY);
             ticks++;
         }
+
+        $("#inorout").text(state.inOrOut);
     }
     intervalId = setInterval(update, INTERVAL);
 
