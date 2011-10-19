@@ -6,14 +6,6 @@ function assert(condition, errorMsg) {
     if (! condition) throw new Error(errorMsg);
 }
 
-function mysum(fromInclusive, toInclusive, f) {
-    var total = 0;
-    for (var i = fromInclusive; i <= toInclusive; ++i) {
-        total += f(i);
-    }
-    return total;
-}
-
 function zeroedArray(n) {
     var a = new Array(n);
     for (var i = 0; i < n; ++i) a[i] = 0;
@@ -49,7 +41,9 @@ function getWhiteNoiseParms() {
     parms.f = 1;
     parms.m = 20;
     // Fig 17b:
-    parms.phi = [0.19, 0.91, 0.37, 0.82, 0.42, 0.31, 0.54, 0.53, 0.27, 0.73, 0.27, 0.10, 0.59, 0.75, 0.65, 0.50, 0.78, 0.61, 0.46, 0.55];
+//    parms.phi = [0.19, 0.91, 0.37, 0.82, 0.42, 0.31, 0.54, 0.53, 0.27, 0.73, 0.27, 0.10, 0.59, 0.75, 0.65, 0.50, 0.78, 0.61, 0.46, 0.55];
+    // Figs 15 etc.
+    parms.phi = [0.46, 0.52, 0.03, 0.56, 0.19, 0.03, 0.40, 0.02, 0.53, 0.73, 0.22, 0.39, 0.38, 0.14, 0.86, 0.17, 0.25, 0.27, 0.66, 0.51];
 /*    parms.phi = new Array(parms.m);
     for (var i = 0; i < parms.m; ++i) {
         parms.phi[i] = Math.random(); // Between 0 and 1.
@@ -59,10 +53,11 @@ function getWhiteNoiseParms() {
 }
 
 function whiteNoise(parms, p) {
-    var r = (1/parms.m) *
-            mysum(1, parms.m, function (i) {
-                return Math.sin(2*Math.PI*((i*parms.f*p)+parms.phi[i-1]));
-            });
+    var sum = 0;
+    for (var i = 1; i <= parms.m; ++i) {
+        sum += Math.sin((2*Math.PI*i*parms.f*p)/500 + parms.phi[i-1]);
+    }
+    var r = (1/parms.m) * sum;
     assert(r >= -1 && r <= 1, "Bad return value for 'whiteNoise': " + r);
     return r;
 }
@@ -73,12 +68,12 @@ function getSearchParms() {
         maxSimulationSteps: 500,
         gaussParms: { mean: 0, sigma: Math.sqrt(numRadii) },
         whiteNoiseParms: getWhiteNoiseParms(),
-        pDiscover: 0.8,
+        pDiscover: 0.9,
         radiusSize: radiusSize,
-        stepSize: radiusSize,
-        stepTime: 100, // Milliseconds
+        stepSize: radiusSize / 4,
+        stepTime: 20, // Milliseconds
         numRadii: numRadii,
-        scalingParm: 20//numRadii * radiusSize * 5
+        scalingParm: 10//numRadii * radiusSize * 5
     }
 }
 
@@ -97,6 +92,7 @@ function getInitialSearchState() {
         posY: 0, // From origin (not the same as processing coord).
         oldPosX: 0,
         oldPosY: 0,
+        currentRadius: 0,
         previousRadius: null
     };
 }
@@ -136,23 +132,23 @@ function pInRadius(state, radius) {
 // should move toward or away from the origin. It returns 1
 // to indicate 'away', 0 to indicate 'stay at current distance',
 // and -1 to indicate 'toward'.
-function inOrOut(state, currentRadius) {
-    if (currentRadius == 0) {
+function inOrOut(state) {
+    if (state.currentRadius == 0) {
         if (pInRadius(state, 0) > pInRadius(state, 1))
             return 0;
         else
             return 1;
     }
-    else if (currentRadius == state.parms.numRadii - 1) {
-        if (pInRadius(state, currentRadius) < pInRadius(state, currentRadius-1))
+    else if (state.currentRadius == state.parms.numRadii - 1) {
+        if (pInRadius(state, state.currentRadius) < pInRadius(state, state.currentRadius-1))
             return -1;
         else
             return 0;
     }
     else {
-        var inCurrentR = pInRadius(state, currentRadius);
-        var inOuterR = pInRadius(state, currentRadius+1);
-        var inInnerR = pInRadius(state, currentRadius-1);
+        var inCurrentR = pInRadius(state, state.currentRadius);
+        var inOuterR = pInRadius(state, state.currentRadius+1);
+        var inInnerR = pInRadius(state, state.currentRadius-1);
         if (inCurrentR > inInnerR && inCurrentR > inOuterR)
             return 0;
         else if (inOuterR > inCurrentR && inOuterR > inInnerR)
@@ -179,7 +175,7 @@ function updateSearchState(state) {
 
     assertConsistentRadiusPs(state);
 
-    var tanRadRat = whiteNoise(getWhiteNoiseParms(), state.step) * state.parms.scalingParm;
+    var tanRadRat = whiteNoise(state.parms.whiteNoiseParms, state.step) * state.parms.scalingParm;
     var trrs = tanRadRat * tanRadRat;
     var rad = 1/Math.sqrt(1+trrs);
     var tan = tanRadRat/Math.sqrt(1+trrs);
@@ -187,48 +183,31 @@ function updateSearchState(state) {
     var vecFromRadX = state.posX == 0 ? 1 : state.posX;
     var vecFromRadY = state.posY;
     var l = Math.sqrt((vecFromRadX*vecFromRadX) + (vecFromRadY*vecFromRadY));
-    var currentRadius = Math.floor(l / state.parms.radiusSize);
-    if (currentRadius >= state.parms.numRadii)
+    state.currentRadius = Math.floor(l / state.parms.radiusSize);
+    if (state.currentRadius >= state.parms.numRadii)
         return false;
 
-    state.inOrOut = inOrOut(state, currentRadius);
+    state.inOrOut = inOrOut(state);
+    if (state.inOrOut == 0) {
+        rad = 0;
+        tan = 1;
+    }
 
     state.oldPosX = state.posX;
     state.oldPosY = state.posY;
 
-    if (state.inOrOut != 0) {
-        if (state.inOrOut == -1) {
-            vecFromRadX *= -1;
-            vecFromRadY *= -1;
-        }
+    var sin = (state.inOrOut == -1 ? vecFromRadY * -1 : vecFromRadY) / l;
+    var cos = (state.inOrOut == -1 ? vecFromRadX * -1 : vecFromRadX) / l;
+    state.posX += rad * state.parms.stepSize * cos;
+    state.posY += rad * state.parms.stepSize * sin;
         
-        var sin = vecFromRadY / l;
-        var cos = vecFromRadX / l;
-        state.posX += rad * state.parms.stepSize * cos;
-        state.posY += rad * state.parms.stepSize * sin;
+    var perpX = -vecFromRadY;
+    var perpY = vecFromRadX;
         
-        var perpX = -vecFromRadY;
-        var perpY = vecFromRadX;
-        
-        var sin = perpY / l;
-        var cos = perpX / l;
-        state.posX += tan * cos * state.parms.stepSize;
-        state.posY += tan * sin * state.parms.stepSize;
-    }
-    else { // state.inOrOut == 0
-        // Move the step size while keeping at exactly the same distance from the origin.
-        var theta = Math.atan((state.parms.stepSize * 0.5) / l) * 2;
-        var angle = Math.PI/2 - Math.asin((l * Math.sin(theta)) / state.parms.stepSize);
-        console.log(theta + " : " + angle);
-        var cos = Math.cos(angle);
-        var sin = Math.sin(angle);
-        state.posX += cos * state.parms.stepSize;
-        state.posY += sin * state.parms.stepSize;
-
-        // Sanity check.
-        var newRadius = Math.floor(l / state.parms.radiusSize);
-        assert(newRadius == currentRadius, "Ant skipped out of its radius");
-    }
+    var sin = perpY / l;
+    var cos = perpX / l;
+    state.posX += tan * cos * state.parms.stepSize;
+    state.posY += tan * sin * state.parms.stepSize;
 
     // Check that the ant hasn't gone outside the area,
     // and move it back inside if it has.
@@ -242,43 +221,32 @@ function updateSearchState(state) {
         state.posY = state.parms.numRadii * state.parms.radiusSize * sin;
     }
 
-//    // If we've "crossed over", flip inOrOut.
-//    if ((state.oldPosX <= 0 && state.posX > 0 || state.oldPosX > 0 && state.posX <= 0) &&
-//        (state.oldPosY <= 0 && state.posY > 0 || state.oldPosY > 0 && state.posY <= 0)) {
-//        alert("CROSS!");
-//        state.inOrOut *= -1;
-//    }
+    if (state.posX < state.radiiMinXs[state.currentRadius])
+        state.radiiMinXs[state.currentRadius] = state.posX;
+    else if (state.posX > state.radiiMaxXs[state.currentRadius])
+        state.radiiMaxXs[state.currentRadius] = state.posX;
 
-//    if (state.previousRadius !== null && currentRadius == 0 && state.previousRadius > 0) {
-//        alert("CROSS!");
-//        state.inOrOut *= -1;
-//    }
-//    state.previousRadius = currentRadius;
-
-    if (state.posX < state.radiiMinXs[currentRadius])
-        state.radiiMinXs[currentRadius] = state.posX;
-    else if (state.posX > state.radiiMaxXs[currentRadius])
-        state.radiiMaxXs[currentRadius] = state.posX;
-
-    if (state.posY < state.radiiMinYs[currentRadius])
-        state.radiiMinYs[currentRadius] = state.posY;
-    else if (state.posY > state.radiiMaxYs[currentRadius])
-        state.radiiMaxYs[currentRadius] = state.posY;
+    if (state.posY < state.radiiMinYs[state.currentRadius])
+        state.radiiMinYs[state.currentRadius] = state.posY;
+    else if (state.posY > state.radiiMaxYs[state.currentRadius])
+        state.radiiMaxYs[state.currentRadius] = state.posY;
 
     if (state.previousRadius === null) {
-        state.timeInRadii[currentRadius]++;
+        state.timeInRadii[state.currentRadius]++;
     }
     else {
-        for (var i = state.previousRadius; i <= currentRadius; ++i) {
-            state.timeInRadii[i] += 1/(Math.abs(currentRadius-state.previousRadius)+1);
+        for (var i = state.previousRadius; i <= state.currentRadius; ++i) {
+            state.timeInRadii[i] += 1/(Math.abs(state.currentRadius-state.previousRadius)+1);
         }
     }
-    state.previousRadius = currentRadius;
+    state.previousRadius = state.currentRadius;
 
     if (((state.oldPosX < 0 && state.posX > 0) || (state.posX < 0 && state.oldPosX > 0) || (state.posX == 0 && state.oldPosX == 0)) &&
         ((state.oldPosY < 0 && state.posY > 0) || (state.posY < 0 && state.oldPosY > 0) || (state.posY == 0 && state.oldPosY == 0))) {
         state.inOrOut *= -1;
     }
+
+//    alert("TICK! " + state.previousRadius + " : " + state.inOrOut);
 
     return true;
 }
@@ -384,28 +352,6 @@ function sketchProc(p) {
         p.stroke(255, 0, 0);
         p.fill(255, 0, 0);
         p.ellipse(antX + WIDTH/2, HEIGHT/2-antY, 20, 20);
-        p.stroke(0, 0, 255);
-        p.fill(0, 0, 255);
-        if (state.inOrOut == -1) {
-            p.line(WIDTH/2, HEIGHT/2, antX+WIDTH/2, HEIGHT/2-antY);
-        }
-        else if (state.inOrOut == 0) {
-            p.ellipse(antX+WIDTH/2, HEIGHT/2-antY, 10, 10);
-        }
-        else {
-            var l = Math.sqrt(antX*antX + antY*antY);
-            var sin  = antY/l;
-            var cos = antX/l;
-            var xl = state.parms.numRadii * state.parms.radiusSize - l;
-            p.line(antX+WIDTH/2, HEIGHT/2-antY, -antX + cos*xl + WIDTH/2, HEIGHT/2 - antY + sin*xl);
-        }
-
-        if (typeof(targetX) != "undefined") {
-            var dx = targetX - antX;
-            var dy = targetY - antY;
-            p.stroke(0, 255, 0);
-            p.line(WIDTH/2+antX, HEIGHT/2-antY, WIDTH/2+targetX, HEIGHT/2-targetY);
-        }       
     }
     draw(0, 0);
 
@@ -433,30 +379,6 @@ function sketchProc(p) {
                     p.vertex(x+WIDTH/2, HEIGHT/2-y);
                 }
                 p.endShape();
-/*                // Draw the little blue arrows.
-                p.stroke(0, 0, 255);
-                p.fill(0, 0, 255);
-                p.noFill();
-                p.strokeWeight(1);
-                for (var i = 2; i < positions.length; i += 2) {
-                    var x1 = positions[i-2]; var y1 = positions[i-1];
-                    var x2 = positions[i]; var y2 = positions[i+1];
-                    var pointToBaseX = x1 - x2;
-                    var pointToBaseY = y1 - y2;
-                    var rat = pointToBaseY/pointToBaseX;
-                    var ax = Math.sqrt((4*4)/(rat*rat + 1));
-                    var ay = rat * ax;
-                    console.log(ax*ax + ay*ay);
-                    var perpX = -ax;
-                    var perpY = ay;
-                    var p2x = x2 + ax + perpX;
-                    var p2y = y2 + ay + perpY;
-                    var p3x = x2 + ax - perpX;
-                    var p3y = y2 + ay - perpY;
-                    p.triangle(x2+WIDTH/2, HEIGHT/2-y2, p2x+WIDTH/2, HEIGHT/2-p2y, WIDTH/2+p3x, HEIGHT/2-p3y);
-                    p.line(WIDTH/2+x2, HEIGHT/2-y2, WIDTH/2+x2 + ax, HEIGHT/2-(y2 + ay));
-                    console.log(JSON.stringify([x2,y2,p2x,p2y,p3x,p3y]));
-                }*/
             }
             ticks = 0;
         }
@@ -477,6 +399,8 @@ function sketchProc(p) {
         }
 
         $("#inorout").text(state.inOrOut);
+        $("#xpos").text(state.posX.toFixed(2));
+        $("#ypos").text(state.posY.toFixed(2));
     }
     intervalId = setInterval(update, INTERVAL);
 
