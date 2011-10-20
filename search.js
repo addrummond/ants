@@ -43,12 +43,12 @@ function getWhiteNoiseParms() {
     // Fig 17b:
 //    parms.phi = [0.19, 0.91, 0.37, 0.82, 0.42, 0.31, 0.54, 0.53, 0.27, 0.73, 0.27, 0.10, 0.59, 0.75, 0.65, 0.50, 0.78, 0.61, 0.46, 0.55];
     // Figs 15 etc.
-    parms.phi = [0.46, 0.52, 0.03, 0.56, 0.19, 0.03, 0.40, 0.02, 0.53, 0.73, 0.22, 0.39, 0.38, 0.14, 0.86, 0.17, 0.25, 0.27, 0.66, 0.51];
-/*    parms.phi = new Array(parms.m);
+//    parms.phi = [0.46, 0.52, 0.03, 0.56, 0.19, 0.03, 0.40, 0.02, 0.53, 0.73, 0.22, 0.39, 0.38, 0.14, 0.86, 0.17, 0.25, 0.27, 0.66, 0.51];
+    parms.phi = new Array(parms.m);
     for (var i = 0; i < parms.m; ++i) {
         parms.phi[i] = Math.random(); // Between 0 and 1.
         assert(parms.phi[i] >= 0 && parms.phi[i] <= 1, "Bad random number");
-    }*/
+    }
     return parms;
 }
 
@@ -65,15 +65,15 @@ function whiteNoise(parms, p) {
 function getSearchParms() {
     var numRadii = 10, radiusSize = 40;
     return {
-        maxSimulationSteps: 500,
+        maxSimulationSteps: 1000,
         gaussParms: { mean: 0, sigma: Math.sqrt(numRadii) },
         whiteNoiseParms: getWhiteNoiseParms(),
-        pDiscover: 0.9,
+        pDiscover: 0.8,
         radiusSize: radiusSize,
         stepSize: radiusSize / 4,
         stepTime: 20, // Milliseconds
         numRadii: numRadii,
-        scalingParm: 10//numRadii * radiusSize * 5
+        scalingParm: 10
     }
 }
 
@@ -93,7 +93,9 @@ function getInitialSearchState() {
         oldPosX: 0,
         oldPosY: 0,
         currentRadius: 0,
-        previousRadius: null
+        previousRadius: null,
+        excursionNumber: 1,
+        ticksSinceLastIncrementOfExcursionNumber: 0
     };
 }
 
@@ -175,7 +177,7 @@ function updateSearchState(state) {
 
     assertConsistentRadiusPs(state);
 
-    var tanRadRat = whiteNoise(state.parms.whiteNoiseParms, state.step) * state.parms.scalingParm;
+    var tanRadRat = whiteNoise(state.parms.whiteNoiseParms, state.step) * (state.parms.scalingParm/state.excursionNumber) * (state.currentRadius+1);
     var trrs = tanRadRat * tanRadRat;
     var rad = 1/Math.sqrt(1+trrs);
     var tan = tanRadRat/Math.sqrt(1+trrs);
@@ -239,6 +241,16 @@ function updateSearchState(state) {
             state.timeInRadii[i] += 1/(Math.abs(state.currentRadius-state.previousRadius)+1);
         }
     }
+
+    if (state.previousRadius > 0 && state.currentRadius == 0) {
+        if (state.ticksSinceLastIncrementOfExcursionNumber > 10) {
+//            alert("INC!");
+            state.excursionNumber++;
+            state.ticksSinceLastIncrementOfExcursionNumber = -1;
+        }
+    }
+    state.ticksSinceLastIncrementOfExcursionNumber++;
+
     state.previousRadius = state.currentRadius;
 
     if (((state.oldPosX < 0 && state.posX > 0) || (state.posX < 0 && state.oldPosX > 0) || (state.posX == 0 && state.oldPosX == 0)) &&
