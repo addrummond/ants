@@ -68,12 +68,14 @@ function getSearchParms() {
         maxSimulationSteps: 1000,
         gaussParms: { mean: 0, sigma: Math.sqrt(numRadii) },
         whiteNoiseParms: getWhiteNoiseParms(),
-        pDiscover: 0.8,
+        pDiscover: 0.7,
         radiusSize: radiusSize,
         stepSize: radiusSize / 4,
         stepTime: 20, // Milliseconds
         numRadii: numRadii,
-        scalingParm: 10
+        scalingParm: 10,
+        defaultTanRat: 0.9,
+        defaultRadRat: 0.1
     }
 }
 
@@ -99,34 +101,61 @@ function getInitialSearchState() {
     };
 }
 
-function pInRadius(state, radius) {
-    var fracs = new Array(state.parms.numRadii);
-    var withDiscounts = new Array(state.parms.numRadii);
-    var fracsTotal = 0;
-    var discountTotal = 0;
-    var priorTotal = 0;
-    for (var i = 0; i < state.parms.numRadii; ++i) {
-        var circ = (i+1) * state.parms.radiusSize * 2 * Math.PI;
-        var fractionInspectedEstimate = (state.timeInRadii[i] * state.parms.stepSize * 0.5) / circ;
-        fractionInspectedEstimate = expCumulative(-Math.log(1-state.parms.pDiscover), fractionInspectedEstimate);
-        fracs[i] = 1-fractionInspectedEstimate;
-        fracsTotal += fracs[i];
+var pInRadii;
+(function () {
+    var memoized;
+    var memoizedForStep = null;
+    pInRadii = function (state) {
+        if (state.step === memoizedForStep) {
+            return memoized;
+        }
+        else {
+            var fracs = new Array(state.parms.numRadii);
+            var withDiscounts = new Array(state.parms.numRadii);
+            var fracsTotal = 0;
+            var discountTotal = 0;
+            var priorTotal = 0;
+            for (var i = 0; i < state.parms.numRadii; ++i) {
+                var circ = (i+1) * state.parms.radiusSize * 2 * Math.PI;
+                var fractionInspectedEstimate = (state.timeInRadii[i] * state.parms.stepSize) / circ;
+                fractionInspectedEstimate = expCumulative(-Math.log(1-state.parms.pDiscover), fractionInspectedEstimate);
+                fracs[i] = 1-fractionInspectedEstimate;
+                fracsTotal += fracs[i];
+                
+                // Multiplying by two because we're only using one tail of the distribution.
+                var prior = gaussCumulativeBetween(state.parms.gaussParms, i, i+1) * 2;
+                priorTotal += prior;
+                withDiscounts[i] = prior * (1 - fractionInspectedEstimate);
+                discountTotal += prior - withDiscounts[i];
+            }
+            assert(Math.abs(priorTotal-1) < EPSILON, "Bad total probability (X)");
+            
+            if (fracsTotal != 0) {
+                for (var i = 0; i < withDiscounts.length; ++i) {
+                    var extra = (fracs[i] / fracsTotal) * discountTotal;
+                    withDiscounts[i] += extra;
+                }
+            }
 
-        // Multiplying by two because we're only using one tail of the distribution.
-        var prior = gaussCumulativeBetween(state.parms.gaussParms, i, i+1) * 2;
-        priorTotal += prior;
-        withDiscounts[i] = prior * (1 - fractionInspectedEstimate);
-        discountTotal += prior - withDiscounts[i];
+            memoizedForStep = state.step;
+            memoized = withDiscounts;
+            return withDiscounts;
+        }
     }
-    assert(Math.abs(priorTotal-1) < EPSILON, "Bad total probability (X)");
+})();
 
-    if (fracsTotal == 0) {
-        return withDiscounts[radius];
+function pInRadius(state, radius) { return pInRadii(state)[radius]; }
+function mostProbableRadius(state) {
+    var ps = pInRadii(state);
+    var max = 0;
+    var maxr = 0;
+    for (var i = 0; i < ps.length; ++i) {
+        if (ps[i] > max) {
+            max = ps[i];
+            maxr = i;
+        }
     }
-    else {
-        var extra = (fracs[radius] / fracsTotal) * discountTotal;
-        return withDiscounts[radius] + extra;
-    }
+    return maxr;
 }
 
 // Given the ant's current distance from the origin,
@@ -135,31 +164,14 @@ function pInRadius(state, radius) {
 // to indicate 'away', 0 to indicate 'stay at current distance',
 // and -1 to indicate 'toward'.
 function inOrOut(state) {
-    if (state.currentRadius == 0) {
-        if (pInRadius(state, 0) > pInRadius(state, 1))
-            return 0;
-        else
-            return 1;
-    }
-    else if (state.currentRadius == state.parms.numRadii - 1) {
-        if (pInRadius(state, state.currentRadius) < pInRadius(state, state.currentRadius-1))
-            return -1;
-        else
-            return 0;
-    }
-    else {
-        var inCurrentR = pInRadius(state, state.currentRadius);
-        var inOuterR = pInRadius(state, state.currentRadius+1);
-        var inInnerR = pInRadius(state, state.currentRadius-1);
-        if (inCurrentR > inInnerR && inCurrentR > inOuterR)
-            return 0;
-        else if (inOuterR > inCurrentR && inOuterR > inInnerR)
-            return 1;
-        else if (inOuterR == inCurrentR || inOuterR == inInnerR)
-            return 1; // Go out by default.
-        else
-            return -1;
-    }
+    var maxr = mostProbableRadius(state);
+
+    if (state.currentRadius > maxr)
+        return -1;
+    else if (state.currentRadius < maxr)
+        return 1;
+    else
+        return 0;
 }
 
 function assertConsistentRadiusPs(state) {
@@ -191,8 +203,14 @@ function updateSearchState(state) {
 
     state.inOrOut = inOrOut(state);
     if (state.inOrOut == 0) {
-        rad = 0;
-        tan = 1;
+        rad = 0;//state.parms.defaultRadRat;
+        tan = 1;//state.parms.defaultTanRat;
+//        var d = Math.sqrt(state.posX*state.posX + state.posY*state.posY);
+//        var middle = state.currentRadius * state.parms.radiusSize + state.parms.radiusSize*0.5;
+//        if (d <= middle)
+//            state.inOrOut = -1;
+//        else
+//            state.inOrOut = 1;
     }
 
     state.oldPosX = state.posX;
@@ -234,7 +252,7 @@ function updateSearchState(state) {
         state.radiiMaxYs[state.currentRadius] = state.posY;
 
     if (state.previousRadius === null) {
-        state.timeInRadii[state.currentRadius]++;
+        state.timeInRadii[state.currentRadius] *= tan;
     }
     else {
         for (var i = state.previousRadius; i <= state.currentRadius; ++i) {
@@ -244,7 +262,6 @@ function updateSearchState(state) {
 
     if (state.previousRadius > 0 && state.currentRadius == 0) {
         if (state.ticksSinceLastIncrementOfExcursionNumber > 10) {
-//            alert("INC!");
             state.excursionNumber++;
             state.ticksSinceLastIncrementOfExcursionNumber = -1;
         }
@@ -257,8 +274,6 @@ function updateSearchState(state) {
         ((state.oldPosY < 0 && state.posY > 0) || (state.posY < 0 && state.oldPosY > 0) || (state.posY == 0 && state.oldPosY == 0))) {
         state.inOrOut *= -1;
     }
-
-//    alert("TICK! " + state.previousRadius + " : " + state.inOrOut);
 
     return true;
 }
@@ -296,12 +311,16 @@ function sketchProc(p) {
         for (var i = 0; i < state.parms.numRadii; ++i) {
             psInRadii[i] = pInRadius(state, i);            
         }
+        var maxr = mostProbableRadius(state);
 
         for (var i = state.parms.numRadii-1; i >= 0; --i) {
             var prob = psInRadii[i];
             var v = expCumulative(5, prob)*255;
             p.stroke(255, 255, 255);
-            p.fill(v,v,v);
+            if (i == maxr)
+                p.fill(218, 165, 32);
+            else
+                p.fill(v,v,v);
             p.ellipse(WIDTH/2, HEIGHT/2, (i+1) * state.parms.radiusSize * 2, (i+1) * state.parms.radiusSize * 2);
         }
 
@@ -371,8 +390,6 @@ function sketchProc(p) {
         return;
     function update() {
         if (ticks >= state.parms.stepTime / INTERVAL) {
-//            assert(Math.abs(intermediateX - state.posX) < EPSILON && Math.abs(intermediateY - state.posY) < EPSILON,
-//                   "Unexpected ant position " + state.posX + ", " + state.posY + " (" + intermediateX + ", " + intermediateY + ")")
             positions[state.step * 2] = state.posX;
             positions[state.step * 2 + 1] = state.posY;
             draw(state.posX, state.posY);
