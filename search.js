@@ -40,10 +40,6 @@ function getWhiteNoiseParms() {
     var parms = { };
     parms.f = 1;
     parms.m = 20;
-    // Fig 17b:
-//    parms.phi = [0.19, 0.91, 0.37, 0.82, 0.42, 0.31, 0.54, 0.53, 0.27, 0.73, 0.27, 0.10, 0.59, 0.75, 0.65, 0.50, 0.78, 0.61, 0.46, 0.55];
-    // Figs 15 etc.
-//    parms.phi = [0.46, 0.52, 0.03, 0.56, 0.19, 0.03, 0.40, 0.02, 0.53, 0.73, 0.22, 0.39, 0.38, 0.14, 0.86, 0.17, 0.25, 0.27, 0.66, 0.51];
     parms.phi = new Array(parms.m);
     for (var i = 0; i < parms.m; ++i) {
         parms.phi[i] = Math.random(); // Between 0 and 1.
@@ -68,14 +64,14 @@ function getSearchParms() {
         maxSimulationSteps: 1000,
         gaussParms: { mean: 0, sigma: Math.sqrt(numRadii) },
         whiteNoiseParms: getWhiteNoiseParms(),
-        pDiscover: 0.7,
+        pDiscover: 0.9,
         radiusSize: radiusSize,
         stepSize: radiusSize / 4,
         stepTime: 20, // Milliseconds
         numRadii: numRadii,
         scalingParm: 10,
-        defaultTanRat: 0.9,
-        defaultRadRat: 0.1
+        defaultTanRat: 0.85,
+        defaultRadRat: 0.15
     }
 }
 
@@ -90,6 +86,7 @@ function getInitialSearchState() {
         radiiMinYs: zeroedArray(parms.numRadii),
         radiiMaxYs: zeroedArray(parms.numRadii),
         inOrOut: 1, // 1 for out, 0 for stay in the same radius, -1 for in.
+        lastRealInOrOut: 1,
         posX: 0, // From origin (not the same as processing coord).
         posY: 0, // From origin (not the same as processing coord).
         oldPosX: 0,
@@ -105,6 +102,7 @@ var pInRadii;
 (function () {
     var memoized;
     var memoizedForStep = null;
+
     pInRadii = function (state) {
         if (state.step === memoizedForStep) {
             return memoized;
@@ -112,29 +110,24 @@ var pInRadii;
         else {
             var fracs = new Array(state.parms.numRadii);
             var withDiscounts = new Array(state.parms.numRadii);
-            var fracsTotal = 0;
-            var discountTotal = 0;
+            var withDiscountsTotal = 0;
             var priorTotal = 0;
             for (var i = 0; i < state.parms.numRadii; ++i) {
                 var circ = (i+1) * state.parms.radiusSize * 2 * Math.PI;
                 var fractionInspectedEstimate = (state.timeInRadii[i] * state.parms.stepSize) / circ;
                 fractionInspectedEstimate = expCumulative(-Math.log(1-state.parms.pDiscover), fractionInspectedEstimate);
-                fracs[i] = 1-fractionInspectedEstimate;
-                fracsTotal += fracs[i];
                 
-                // Multiplying by two because we're only using one tail of the distribution.
+                // Multiplying by 2 because we're only using one tail.
                 var prior = gaussCumulativeBetween(state.parms.gaussParms, i, i+1) * 2;
                 priorTotal += prior;
                 withDiscounts[i] = prior * (1 - fractionInspectedEstimate);
-                discountTotal += prior - withDiscounts[i];
+                withDiscountsTotal += withDiscounts[i];
             }
-            assert(Math.abs(priorTotal-1) < EPSILON, "Bad total probability (X)");
+            assert(Math.abs(priorTotal-1) < EPSILON, "Bad total probability (prior) " + priorTotal);
             
-            if (fracsTotal != 0) {
-                for (var i = 0; i < withDiscounts.length; ++i) {
-                    var extra = (fracs[i] / fracsTotal) * discountTotal;
-                    withDiscounts[i] += extra;
-                }
+            var m = 1/withDiscountsTotal;
+            for (var i = 0; i < withDiscounts.length; ++i) {
+                withDiscounts[i] *= m;
             }
 
             memoizedForStep = state.step;
@@ -202,15 +195,33 @@ function updateSearchState(state) {
         return false;
 
     state.inOrOut = inOrOut(state);
+    if (state.inOrOut != 0)
+        state.lastRealInOrOut = state.inOrOut;
+
     if (state.inOrOut == 0) {
-        rad = 0;//state.parms.defaultRadRat;
-        tan = 1;//state.parms.defaultTanRat;
-//        var d = Math.sqrt(state.posX*state.posX + state.posY*state.posY);
-//        var middle = state.currentRadius * state.parms.radiusSize + state.parms.radiusSize*0.5;
-//        if (d <= middle)
-//            state.inOrOut = -1;
-//        else
-//            state.inOrOut = 1;
+        // Don't move completely tangentially when the ant is trying
+        // to remain in the same radius, but add a slight radial component.
+        // (Makes paths a bit more bumpy and helps ensure that ant doesn't
+        // just graze the inner and outer edges of each radius; has no
+        // real effect on the search.)
+
+        rad = state.parms.defaultRadRat;
+        tan = state.parms.defaultTanRat;
+        var d = Math.sqrt(state.posX*state.posX + state.posY*state.posY);
+        if (state.lastRealInOrOut == 1) {
+            var innerBit = state.currentRadius * state.parms.radiusSize + state.parms.radiusSize*0.75;
+            if (d < innerBit)
+                state.inOrOut = 1;
+            else
+                state.inOrOut = -1;
+        }
+        else { // if state.lastRealInOrOut == -1
+            var outerBit = state.currentRadius * state.parms.radiusSize + state.parms.radiusSize*0.75;
+            if (d > outerBit)
+                state.inOrOut = -1;
+            else
+                state.inOrOut = 1;
+        }
     }
 
     state.oldPosX = state.posX;
@@ -451,8 +462,5 @@ function sketchProc(p) {
 
 $(document).ready(function () {
     var canvas = document.getElementById("canvas1");
-//    text1 = document.getElementById("text1");
-//    text2 = document.getElementById("text2");
-
     var processingInstance = new Processing(canvas, sketchProc);
 });
