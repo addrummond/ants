@@ -437,10 +437,6 @@ function sketchProc(p) {
             draw(intermediateX, intermediateY, state.posX, state.posY);
             ticks++;
         }
-
-        $("#inorout").text(state.inOrOut);
-        $("#xpos").text(state.posX.toFixed(2));
-        $("#ypos").text(state.posY.toFixed(2));
     }
     intervalId = setInterval(update, INTERVAL);
 
